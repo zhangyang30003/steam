@@ -30,7 +30,8 @@ warnings.filterwarnings('ignore')
 train = pd.read_csv(r"C:\Users\Administrator\Desktop\AI_learning\steam\zhengqi_train.csv")
 test = pd.read_csv(r"C:\Users\Administrator\Desktop\AI_learning\steam\zhengqi_test.csv")
 
-y = train[['target']]
+#y = train[['target']]
+Y_train  = train[['target']]
 x_train = train.drop(['target'], axis=1)
 x_test = test
 
@@ -54,7 +55,8 @@ all_data[scale_cols] = all_data[scale_cols].apply(scale_minmax,axis=0)
 all_data = all_data.drop("target", axis = 1)
 #print(all_data[scale_cols].describe())
 
-X = all_data[:2888]
+#X = all_data[:2888]
+X_train= all_data[:2888]
 x_test = all_data[2888:]
 
 #all_train_data
@@ -66,7 +68,7 @@ x_test = all_data[2888:]
 #plt.scatter(x_train_dr,y_train_all)
 #plt.show()
 
-X_train, X_val, Y_train, Y_val = train_test_split(X, y, test_size = 0.2, shuffle = True)
+#X_train, X_val, Y_train, Y_val = train_test_split(X, y, test_size = 0.5, shuffle = True)
 
 print('START ML', datetime.now(), )
 kfolds = KFold(n_splits=10, shuffle=True, random_state=42)
@@ -197,25 +199,25 @@ stack_gen_model = stack_gen.fit(np.array(X_train),np.array(Y_train))
 def blend_models_predict(X_train):
     return (
 #            (0.1 * elastic_model_full_data.predict(X)) + \
-            (0.05 * lasso_model_full_data.predict(X_train))  + \
+            (0.1 * lasso_model_full_data.predict(X_train))  + \
             (0.1 * svr_model_full_data.predict(X_train)) + \
             (0.1 * GBR_model_full_data.predict(X_train)) + \
-            (0.3 * xgb_model_full_data.predict(X_train))   + \
-            (0.05 * RandomForest_model_full_data.predict(X_train)) + \
-            (0.4 * stack_gen_model.predict(np.array(X_train)))
+            (0.1 * xgb_model_full_data.predict(X_train))   + \
+            (0.1 * RandomForest_model_full_data.predict(X_train)) + \
+            (0.5 * stack_gen_model.predict(np.array(X_train)))
             )
 
 print('RMSLE score on train data:')
 print(mse(Y_train, blend_models_predict(X_train)))  
  
 print('RMSLE score on val data:')
-print(mse(Y_val, lasso_model_full_data.predict(X_val)))
-print(mse(Y_val, svr_model_full_data.predict(X_val)))
-print(mse(Y_val, GBR_model_full_data.predict(X_val)))
-print(mse(Y_val, xgb_model_full_data.predict(X_val)))
-print(mse(Y_val, RandomForest_model_full_data.predict(X_val)))
-print(mse(Y_val, stack_gen_model.predict(np.array(X_val))))
-print(mse(Y_val, blend_models_predict(X_val)))  
+#print(mse(Y_val, lasso_model_full_data.predict(X_val)))
+#print(mse(Y_val, svr_model_full_data.predict(X_val)))
+#print(mse(Y_val, GBR_model_full_data.predict(X_val)))
+#print(mse(Y_val, xgb_model_full_data.predict(X_val)))
+#print(mse(Y_val, RandomForest_model_full_data.predict(X_val)))
+#print(mse(Y_val, stack_gen_model.predict(np.array(X_val))))
+#print(mse(Y_val, blend_models_predict(X_val)))  
 
 
 y_pred_test_lasso = pd.DataFrame(lasso_model_full_data.predict(x_test), columns = ['lasso'])
@@ -238,4 +240,4 @@ all_results = pd.concat([y_pred_test_lasso
                          ,ignore_index = False)
     
     
-pd.DataFrame(all_results).to_csv('all5.csv',index = 0, header = 1)
+pd.DataFrame(all_results).to_csv('all6_all_train.csv',index = 0, header = 1)
