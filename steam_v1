@@ -1,0 +1,241 @@
+import warnings
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
+
+from sklearn.decomposition import PCA
+
+from sklearn.model_selection import GridSearchCV, cross_val_score, cross_val_predict, KFold
+from sklearn.metrics import make_scorer,mean_squared_error
+
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor,AdaBoostRegressor
+from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
+from sklearn.svm import LinearSVR, SVR
+
+from xgboost import XGBRegressor
+
+
+from sklearn.linear_model import LassoCV
+from sklearn.preprocessing import RobustScaler
+from sklearn.pipeline import make_pipeline
+from mlxtend.regressor import StackingCVRegressor
+from datetime import datetime
+
+warnings.filterwarnings('ignore')
+ 
+train = pd.read_csv(r"C:\Users\Administrator\Desktop\AI_learning\steam\zhengqi_train.csv")
+test = pd.read_csv(r"C:\Users\Administrator\Desktop\AI_learning\steam\zhengqi_test.csv")
+
+y = train[['target']]
+x_train = train.drop(['target'], axis=1)
+x_test = test
+
+
+#去除不规则项
+all_data = pd.concat([train, test], axis=0, ignore_index = False)
+all_data.drop(["V5","V9","V11","V17","V22","V28"],axis=1,inplace=True)
+
+#去除低相关项
+threshold = 0.1
+corr_matrix = train.corr().abs()
+drop_col=corr_matrix[corr_matrix["target"]<threshold].index
+all_data.drop(drop_col,axis=1,inplace=True)
+
+#normalise
+cols_numeric=list(all_data.columns)
+def scale_minmax(col):
+    return (col-col.min())/(col.max()-col.min())
+scale_cols = [col for col in cols_numeric if col!='target']
+all_data[scale_cols] = all_data[scale_cols].apply(scale_minmax,axis=0)
+all_data = all_data.drop("target", axis = 1)
+#print(all_data[scale_cols].describe())
+
+X = all_data[:2888]
+x_test = all_data[2888:]
+
+#all_train_data
+#x_train_all = all_data[:2888]
+#y_train_all = y_train
+#
+#x_train_dr = pd.DataFrame(PCA(1).fit_transform(x_train_all))
+#
+#plt.scatter(x_train_dr,y_train_all)
+#plt.show()
+
+X_train, X_val, Y_train, Y_val = train_test_split(X, y, test_size = 0.2, shuffle = True)
+
+print('START ML', datetime.now(), )
+kfolds = KFold(n_splits=10, shuffle=True, random_state=42)
+# rmsle
+def mse(y_, y_pred):
+    return mean_squared_error(y_, y_pred)
+
+# build our model scoring function
+def cv_mse(model):
+    rmse = -cross_val_score(model, X_train, Y_train,
+                                    scoring="neg_mean_squared_error",
+                                    cv=kfolds)
+    return (rmse)
+
+svr = make_pipeline(RobustScaler(), SVR(C= 300, epsilon= 600/10000, gamma=10/10000))
+    
+RandomForest = RandomForestRegressor(
+                                        n_estimators = 1800
+                                        ,oob_score = True
+                                        ,n_jobs = -1
+                                        ,random_state = 90
+                                        ,max_depth = 6
+                                        ,max_features = 20
+                                        ,min_samples_leaf = 1  #1
+                                        ,min_samples_split = 2  #3
+                                    ) #
+
+xgboost = XGBRegressor(
+                   learning_rate=0.01
+                   ,n_estimators=3460
+                   ,max_depth=6
+                   , min_child_weight=0
+#                   ,gamma=0
+                   ,subsample=0.7          ###0.1224----0.11533
+#                   ,colsample_bytree=0.7  ####
+                   ,objective='reg:linear'
+                   ,nthread=-1
+                   ,scale_pos_weight=1
+                   ,seed=27               ######
+#                   ,reg_alpha=0.00006
+                                 )
+
+
+GBR = GradientBoostingRegressor(
+                                      n_estimators = 3000  #0.1288 #01165
+                                    ,random_state = 90
+                                    ,max_depth = 5        #0.1231
+                                    ,max_features = 20    #0.1195
+                                )
+    
+ 
+    
+lasso = Lasso( 
+                    alpha = 94/1e6  #0.105
+#                    ,normalize=True
+#                    , max_iter=1e6
+                )
+
+#ridge = Ridge( 
+#                    alpha = 0.015  #0.105
+##                    ,normalize=True
+##                    , max_iter=1e6
+#                )
+
+stack_gen = StackingCVRegressor(regressors=(
+#                                             ridge
+                                             lasso
+#                                            , elasticnet
+                                            ,svr
+                                            ,GBR
+                                            , xgboost
+                                            , RandomForest
+                                            )
+                                            ,meta_regressor=xgboost
+                                            ,use_features_in_secondary=True
+                                            )   
+
+
+score = cv_mse(svr)
+print("svr score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()))
+
+#score = cv_mse(ridge)
+#print("Ridge score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()))
+  
+score = cv_mse(xgboost)
+print("Xgboost score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()))
+
+score = cv_mse(lasso)
+print("lasso score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()),  )
+
+score = cv_mse(RandomForest)
+print("RandomForest score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()))
+
+score = cv_mse(GBR)
+print("GBR score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()) )
+
+score = np.sqrt(-cross_val_score(stack_gen, np.array(X_train),np.array(Y_train),
+                                    scoring="neg_mean_squared_error",
+                                    cv=kfolds))
+print("stack_gen score: {:.4f} ({:.4f})\n".format(score.mean(), score.std()) )
+
+
+
+print('START Fitting', datetime.now(), )
+print(datetime.now(), 'xgboost')
+xgb_model_full_data = xgboost.fit(X_train, Y_train)
+
+print(datetime.now(), 'RandomForest')
+RandomForest_model_full_data = RandomForest.fit(X_train, Y_train)
+
+print(datetime.now(), 'GBR')
+GBR_model_full_data = GBR.fit(X_train, Y_train)
+
+print(datetime.now(), 'Lasso')
+lasso_model_full_data = lasso.fit(X_train, Y_train)
+
+#print(datetime.now(), 'Ridge')
+#ridge_model_full_data = ridge.fit(X, y)
+
+print(datetime.now(), 'svr')
+svr_model_full_data = svr.fit(X_train, Y_train)
+
+
+print(datetime.now(), 'StackingCVRegressor')
+stack_gen_model = stack_gen.fit(np.array(X_train),np.array(Y_train))
+
+
+def blend_models_predict(X_train):
+    return (
+#            (0.1 * elastic_model_full_data.predict(X)) + \
+            (0.05 * lasso_model_full_data.predict(X_train))  + \
+            (0.1 * svr_model_full_data.predict(X_train)) + \
+            (0.1 * GBR_model_full_data.predict(X_train)) + \
+            (0.3 * xgb_model_full_data.predict(X_train))   + \
+            (0.05 * RandomForest_model_full_data.predict(X_train)) + \
+            (0.4 * stack_gen_model.predict(np.array(X_train)))
+            )
+
+print('RMSLE score on train data:')
+print(mse(Y_train, blend_models_predict(X_train)))  
+ 
+print('RMSLE score on val data:')
+print(mse(Y_val, lasso_model_full_data.predict(X_val)))
+print(mse(Y_val, svr_model_full_data.predict(X_val)))
+print(mse(Y_val, GBR_model_full_data.predict(X_val)))
+print(mse(Y_val, xgb_model_full_data.predict(X_val)))
+print(mse(Y_val, RandomForest_model_full_data.predict(X_val)))
+print(mse(Y_val, stack_gen_model.predict(np.array(X_val))))
+print(mse(Y_val, blend_models_predict(X_val)))  
+
+
+y_pred_test_lasso = pd.DataFrame(lasso_model_full_data.predict(x_test), columns = ['lasso'])
+y_pred_test_svr = pd.DataFrame(svr_model_full_data.predict(x_test), columns = ['svr'])
+y_pred_test_gbr = pd.DataFrame(GBR_model_full_data.predict(x_test), columns = ['gbr'])
+y_pred_test_xgb = pd.DataFrame(xgb_model_full_data.predict(x_test), columns = ['xgb'])
+y_pred_test_rfr = pd.DataFrame(RandomForest_model_full_data.predict(x_test), columns = ['rfr'])
+y_pred_test_stack = pd.DataFrame(stack_gen_model.predict(np.array(x_test)), columns = ['stack'])
+
+
+y_pred_test_blend = pd.DataFrame(blend_models_predict(x_test),columns = ['blend_'] )
+all_results = pd.concat([y_pred_test_lasso
+                         , y_pred_test_svr
+                         ,y_pred_test_gbr
+                         ,y_pred_test_xgb
+                         ,y_pred_test_rfr
+                         ,y_pred_test_stack
+                         ,y_pred_test_blend]
+                         ,axis=1
+                         ,ignore_index = False)
+    
+    
+pd.DataFrame(all_results).to_csv('all5.csv',index = 0, header = 1)
